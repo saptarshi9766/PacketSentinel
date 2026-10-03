@@ -2,12 +2,13 @@
 Ex1:
 Adapt the hello-buffer.py eBPF program to output different trace messages for
 odd and even process IDs
+TODO: Put the C code seperate
 """
 #!/usr/bin/env python3
 from bcc import BPF
 
 program = r"""
-#include <string>
+
 BPF_PERF_OUTPUT(output); 
  
 struct data_t {
@@ -19,18 +20,21 @@ struct data_t {
  
 int hello(void *ctx) {
    struct data_t data = {}; 
-   char even_message[16] = "Even PID";
-   char odd_message[16] = "Odd PID";
- 
+   //char even_message[16] = "Even PID";
+   //char odd_message[16] = "Odd PID";
+   char message[16] = "Hello";
+   
    data.pid = bpf_get_current_pid_tgid() >> 32;
    data.uid = bpf_get_current_uid_gid() & 0xFFFFFFFF;
 
    bpf_get_current_comm(data.command, sizeof(data.command));
 
+   bpf_probe_read_kernel(data.message, sizeof(data.message), message);
    if (data.pid % 2 == 0) {
-      bpf_probe_read_kernel(data.message, sizeof(data.message), even_message);
+      __builtin_memcpy(data.message, "EVEN", sizeof(data.message));
+      
    } else {
-      bpf_probe_read_kernel(data.message, sizeof(data.message), odd_message);
+      __builtin_memcpy(data.message, "ODD", sizeof(data.message));
    }
 
    output.perf_submit(ctx, &data, sizeof(data)); 
