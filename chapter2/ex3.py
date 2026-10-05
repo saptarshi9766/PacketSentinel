@@ -8,63 +8,37 @@ to that same sys_enter raw tracepoint.
 
 #!/usr/bin/env python3
 from bcc import BPF
-import ctypes as ct
+from time import sleep
 
 program = r"""
-BPF_PROG_ARRAY(syscall, 500);
+BPF_HASH(counter_table);
 
-int hello(struct bpf_raw_tracepoint_args *ctx) {
-    int opcode = ctx->args[1];
-    syscall.call(ctx, opcode);
-    bpf_trace_printk("Another syscall: %d", opcode);
-    return 0;
-}
+int hello(void *ctx) {
+   u64 uid;
+   u64 counter = 0;
+   u64 *p;
 
-int hello_exec(void *ctx) {
-    bpf_trace_printk("Executing a program");
-    return 0;
-}
-
-int hello_timer(struct bpf_raw_tracepoint_args *ctx) {
-    int opcode = ctx->args[1];
-    switch (opcode) {
-        case 222:
-            bpf_trace_printk("Creating a timer");
-            break;
-        case 226:
-            bpf_trace_printk("Deleting a timer");
-            break;
-        default:
-            bpf_trace_printk("Some other timer operation");
-            break;
-    }
-    return 0;
-}
-
-int ignore_opcode(void *ctx) {
-    return 0;
+   uid = bpf_get_current_uid_gid() & 0xFFFFFFFF;
+   p = counter_table.lookup(&uid);
+   if (p != 0) {
+      counter = *p;
+   }
+   counter++;
+   counter_table.update(&uid, &counter);
+   return 0;
 }
 """
 
 b = BPF(text=program)
+syscall = b.get_syscall_fnname("execve")
+b.attach_kprobe(event=syscall, fn_name="hello")
 
-ignore_fn = b.load_func("ignore_opcode", BPF.RAW_TRACEPOINT)
-exec_fn = b.load_func("hello_exec", BPF.RAW_TRACEPOINT)
-timer_fn = b.load_func("hello_timer", BPF.RAW_TRACEPOINT)
+# Attach to a tracepoint that gets hit for all syscalls 
+# b.attach_raw_tracepoint(tp="sys_enter", fn_name="hello")
 
-prog_array = b.get_table("syscall")
-
-# Ignore all syscalls initially
-for i in range(len(prog_array)):
-    prog_array[ct.c_int(i)] = ct.c_int(ignore_fn.fd)
-
-# Only enable few syscalls which are of interest
-prog_array[ct.c_int(59)] = ct.c_int(exec_fn.fd)
-prog_array[ct.c_int(222)] = ct.c_int(timer_fn.fd)
-prog_array[ct.c_int(223)] = ct.c_int(timer_fn.fd)
-prog_array[ct.c_int(224)] = ct.c_int(timer_fn.fd)
-prog_array[ct.c_int(225)] = ct.c_int(timer_fn.fd)
-prog_array[ct.c_int(226)] = ct.c_int(timer_fn.fd)
-b.attach_raw_tracepoint(tp="sys_enter", fn_name="hello")
-
-b.trace_print()
+while True:
+    sleep(2)
+    s = ""
+    for k,v in b["counter_table"].items():
+        s += f"ID {k.value}: {v.value}\t"
+    print(s)
