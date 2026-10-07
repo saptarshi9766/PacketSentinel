@@ -17,7 +17,9 @@ import ctypes as ct
 program = r"""
 BPF_PROG_ARRAY(syscall, 500);
 
-int hello(struct bpf_raw_tracepoint_args *ctx) {
+
+RAW_TRACEPOINT_PROBE(sys_enter)
+{
     int opcode = ctx->args[1];
     syscall.call(ctx, opcode);
     bpf_trace_printk("Another syscall: %d", opcode);
@@ -69,6 +71,6 @@ prog_array[ct.c_int(223)] = ct.c_int(timer_fn.fd)
 prog_array[ct.c_int(224)] = ct.c_int(timer_fn.fd)
 prog_array[ct.c_int(225)] = ct.c_int(timer_fn.fd)
 prog_array[ct.c_int(226)] = ct.c_int(timer_fn.fd)
-b.attach_raw_tracepoint(tp="sys_enter", fn_name="hello")
+#b.attach_raw_tracepoint(tp="sys_enter", fn_name="hello")
 
 b.trace_print()
